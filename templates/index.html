@@ -1,0 +1,1516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>F.R.I.D.A.Y. Core Command Center</title>
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    
+    <!-- MediaPipe for Hand Gestures -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --primary: #00f0ff;
+            --primary-glow: rgba(0, 240, 255, 0.4);
+            --primary-dark: rgba(0, 240, 255, 0.12);
+            --bg-center: #031c33;
+            --bg-edge: #010a14;
+            --font-family: 'Segoe UI', 'Consolas', monospace, sans-serif;
+            --warning-glow: rgba(255, 170, 0, 0.5);
+            --danger-glow: rgba(255, 0, 85, 0.6);
+            --panel-bg: rgba(2, 16, 28, 0.65);
+            --panel-border: rgba(0, 240, 255, 0.35);
+        }
+
+        * { 
+            margin: 0; 
+            padding: 0; 
+            box-sizing: border-box; 
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: radial-gradient(circle at 50% 45%, var(--bg-center) 0%, var(--bg-edge) 70%, #000000 100%);
+            background-size: 200% 200%;
+            animation: bgShift 12s ease-in-out infinite alternate;
+            overflow: hidden;
+            font-family: var(--font-family);
+            color: #fff;
+            user-select: none;
+            transition: background 0.8s ease;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        @keyframes bgShift {
+            0% { background-position: 50% 45%; }
+            100% { background-position: 50% 35%; }
+        }
+
+        /* Ambient HUD Grid Layer */
+        #hud-grid-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 2;
+            background-image: 
+                linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            opacity: 0.7;
+        }
+
+        /* Central Target Reticle Background Overlay */
+        #core-target-hud {
+            position: fixed;
+            top: 45%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 520px;
+            height: 520px;
+            pointer-events: none;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.35;
+        }
+
+        .target-ring {
+            position: absolute;
+            border-radius: 50%;
+            border: 1px dashed rgba(0, 240, 255, 0.4);
+        }
+
+        .target-ring.r1 { width: 480px; height: 480px; animation: spinClockwise 40s linear infinite; border-style: solid; border-color: rgba(0, 240, 255, 0.15); border-top-color: var(--primary); }
+        .target-ring.r2 { width: 380px; height: 380px; animation: spinCounter 25s linear infinite; border-dasharray: 12 8; }
+        .target-ring.r3 { width: 280px; height: 280px; animation: spinClockwise 15s linear infinite; border-color: rgba(0, 240, 255, 0.3); border-left-color: transparent; }
+
+        @keyframes spinClockwise { 100% { transform: rotate(360deg); } }
+        @keyframes spinCounter { 100% { transform: rotate(-360deg); } }
+
+        /* -------------------------------------------------------------
+           NEW: REDESIGNED FUTURISTIC INITIALIZATION OVERLAY
+           ------------------------------------------------------------- */
+        #credit-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000000;
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+            transition: opacity 1.2s cubic-bezier(0.4, 0, 0.2, 1), visibility 1.2s ease;
+            overflow: hidden;
+        }
+
+        #init-hud-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        #init-hud-content {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            pointer-events: none;
+            width: 90vw;
+            max-width: 480px;
+            text-align: center;
+            background: rgba(2, 16, 28, 0.7);
+            padding: 30px 24px;
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 0 40px rgba(0, 240, 255, 0.15), inset 0 0 20px rgba(0, 240, 255, 0.05);
+        }
+
+        #init-main-title {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: 4px;
+            color: var(--primary);
+            text-shadow: 0 0 20px var(--primary-glow);
+            margin-bottom: 4px;
+        }
+
+        #init-diag-container {
+            width: 100%;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #init-diag-status {
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            letter-spacing: 2px;
+            color: rgba(255, 255, 255, 0.85);
+            text-transform: uppercase;
+        }
+
+        #init-progress-bar {
+            width: 100%;
+            max-width: 360px;
+            height: 5px;
+            background: rgba(0, 240, 255, 0.12);
+            border-radius: 3px;
+            overflow: hidden;
+            border: 1px solid rgba(0, 240, 255, 0.3);
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.15);
+            margin-top: 6px;
+        }
+
+        #init-progress-fill {
+            width: 0%;
+            height: 100%;
+            background: var(--primary);
+            box-shadow: 0 0 14px var(--primary);
+            transition: width 0.1s linear;
+        }
+
+        #init-percent-text {
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--primary);
+            letter-spacing: 2px;
+        }
+
+        #init-author-credit {
+            font-size: 10px;
+            letter-spacing: 2px;
+            color: rgba(255, 255, 255, 0.5);
+            margin-top: 10px;
+            text-transform: uppercase;
+        }
+
+        #canvas-container { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            z-index: 1; 
+        }
+
+        /* TOP HEADER COMMAND BAR */
+        #header-bar {
+            position: fixed;
+            top: 18px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            background: var(--panel-bg);
+            padding: 8px 28px;
+            border: 1px solid var(--panel-border);
+            border-radius: 4px;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 0 25px var(--primary-glow), inset 0 0 15px rgba(0, 240, 255, 0.08);
+            font-size: 13px;
+            font-weight: 800;
+            letter-spacing: 3px;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        #header-bar::before, #header-bar::after {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: var(--primary);
+            box-shadow: 0 0 8px var(--primary);
+            transform: rotate(45deg);
+        }
+
+        /* TELEMETRY HUD PANEL (TOP LEFT) */
+        #telemetry-panel {
+            position: fixed;
+            top: 75px;
+            left: 20px;
+            z-index: 10;
+            font-size: 10px;
+            letter-spacing: 1.5px;
+            color: var(--primary);
+            background: var(--panel-bg);
+            padding: 14px 18px;
+            border: 1px solid var(--panel-border);
+            border-left: 3px solid var(--primary);
+            border-radius: 0 8px 8px 0;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 0 20px rgba(0,0,0,0.6), inset 0 0 12px rgba(0, 240, 255, 0.05);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .tele-header {
+            font-size: 9px;
+            font-weight: 800;
+            opacity: 0.7;
+            letter-spacing: 2px;
+            margin-bottom: 2px;
+            color: #ffffff;
+            text-transform: uppercase;
+        }
+
+        .tele-item {
+            display: flex;
+            justify-content: space-between;
+            gap: 14px;
+        }
+
+        /* CHRONO HUD PANEL (TOP RIGHT) */
+        #chrono-panel {
+            position: fixed;
+            top: 75px;
+            right: 20px;
+            z-index: 10;
+            font-size: 10px;
+            letter-spacing: 1.5px;
+            color: var(--primary);
+            background: var(--panel-bg);
+            padding: 12px 20px;
+            border: 1px solid var(--panel-border);
+            border-right: 3px solid var(--primary);
+            border-radius: 8px 0 0 8px;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 0 20px rgba(0,0,0,0.6), inset 0 0 12px rgba(0, 240, 255, 0.05);
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
+        }
+
+        .chrono-label {
+            font-size: 9px;
+            opacity: 0.7;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .chrono-time {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--primary);
+            text-shadow: 0 0 12px var(--primary-glow);
+            letter-spacing: 2.5px;
+            line-height: 1;
+        }
+
+        .chrono-date {
+            font-size: 10px;
+            font-weight: 600;
+            color: #ffffff;
+            opacity: 0.9;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        /* SPEEDOMETER GAUGES HUD PANEL */
+        #gauge-panel {
+            position: fixed;
+            top: 175px;
+            right: 20px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background: var(--panel-bg);
+            padding: 16px 14px;
+            border: 1px solid var(--panel-border);
+            border-right: 3px solid var(--primary);
+            border-radius: 8px 0 0 8px;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 0 25px rgba(0,0,0,0.6), inset 0 0 15px rgba(0, 240, 255, 0.05);
+        }
+
+        .gauge-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            width: 105px;
+        }
+
+        .gauge-svg {
+            width: 105px;
+            height: 90px;
+            overflow: visible;
+        }
+
+        .gauge-bg-arc {
+            fill: none;
+            stroke: rgba(0, 240, 255, 0.15);
+            stroke-width: 6;
+            stroke-linecap: round;
+        }
+
+        .gauge-fill-arc {
+            fill: none;
+            stroke: var(--primary);
+            stroke-width: 7;
+            stroke-linecap: round;
+            stroke-dasharray: 175.93 87.96;
+            stroke-dashoffset: 175.93;
+            transition: stroke-dashoffset 0.6s ease, stroke 0.4s ease;
+            filter: drop-shadow(0px 0px 6px var(--primary-glow));
+        }
+
+        .gauge-fill-arc.cpu-arc { stroke-width: 7; }
+        .gauge-fill-arc.ram-arc { stroke-width: 6; stroke-dasharray: 175.93 87.96; }
+        .gauge-fill-arc.gpu-arc { stroke-width: 8; }
+
+        .gauge-ticks {
+            fill: none;
+            stroke: rgba(0, 240, 255, 0.4);
+            stroke-width: 1.5;
+        }
+
+        .gauge-val-text {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 15px;
+            font-weight: 700;
+            fill: #ffffff;
+            text-anchor: middle;
+            dominant-baseline: central;
+        }
+
+        .gauge-title-label {
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            color: var(--primary);
+            text-transform: uppercase;
+            margin-top: -4px;
+            text-shadow: 0 0 8px var(--primary-glow);
+        }
+
+        /* BOTTOM MAIN HUD DOCK INTERFACE LAYER */
+        #ui-layer {
+            position: fixed;
+            bottom: 22px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            width: 90vw;
+            max-width: 480px;
+        }
+
+        #status-text {
+            color: var(--primary);
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            text-shadow: 0 0 12px var(--primary-glow);
+            text-align: center;
+            background: rgba(0, 240, 255, 0.08);
+            padding: 4px 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 240, 255, 0.2);
+        }
+
+        #chat-log {
+            width: 100%;
+            height: 125px;
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            padding: 12px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 0 25px rgba(0,0,0,0.6), inset 0 0 15px rgba(0, 240, 255, 0.05);
+            font-size: 11px;
+        }
+
+        #chat-log::-webkit-scrollbar { width: 4px; }
+        #chat-log::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 2px; }
+
+        .bubble {
+            padding: 8px 12px;
+            border-radius: 6px;
+            max-width: 88%;
+            word-wrap: break-word;
+            line-height: 1.4;
+            font-family: 'Segoe UI', monospace;
+        }
+
+        .bubble.user {
+            background: rgba(0, 240, 255, 0.25);
+            color: #ffffff;
+            align-self: flex-end;
+            font-weight: 600;
+            border: 1px solid var(--primary);
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        .bubble.bot {
+            background: rgba(255, 255, 255, 0.08);
+            color: #ffffff;
+            align-self: flex-start;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        /* EXISTING SMALL EMPTY TRANSPARENT ROUNDED RECTANGLE CONTAINER */
+        #eq-canvas {
+            width: 100%;
+            max-width: 400px;
+            height: 30px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 6px;
+            border: 1px solid var(--panel-border);
+            box-shadow: inset 0 0 10px rgba(0, 240, 255, 0.1);
+            display: block;
+        }
+
+        #input-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 8px 16px;
+            width: 100%;
+            background: var(--panel-bg);
+            border: 1px solid var(--primary);
+            border-radius: 12px;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 0 30px var(--primary-glow), inset 0 0 15px rgba(0, 240, 255, 0.08);
+        }
+
+        .input-prompt-symbol {
+            color: var(--primary);
+            font-weight: 800;
+            font-size: 14px;
+        }
+
+        #text-input {
+            background: transparent;
+            border: none;
+            color: var(--primary);
+            font-size: 13px;
+            font-family: var(--font-family);
+            width: 100%;
+            outline: none;
+            letter-spacing: 1px;
+        }
+
+        #text-input::placeholder { color: var(--primary); opacity: 0.5; }
+
+        #mic-btn {
+            width: 38px; 
+            height: 38px;
+            flex-shrink: 0;
+            border-radius: 50%;
+            border: 1px solid var(--primary);
+            background: rgba(0, 240, 255, 0.1);
+            cursor: pointer;
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            transition: all 0.4s;
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        #mic-btn:hover { background: var(--primary); transform: scale(1.08); }
+        #mic-btn:hover svg { fill: #000; }
+        #mic-btn svg { width: 18px; height: 18px; fill: var(--primary); }
+        #mic-btn.active { background: rgba(0, 240, 255, 0.35); box-shadow: 0 0 20px var(--primary); animation: micPulse 1.5s infinite; }
+
+        @keyframes micPulse {
+            0% { box-shadow: 0 0 10px var(--primary); }
+            50% { box-shadow: 0 0 25px var(--primary); }
+            100% { box-shadow: 0 0 10px var(--primary); }
+        }
+
+        /* GESTURE CAMERA HUD FEED */
+        #gesture-cam {
+            position: fixed;
+            bottom: 22px;
+            right: 22px;
+            width: 160px;
+            height: 120px;
+            border: 1px solid var(--primary);
+            border-radius: 8px;
+            z-index: 20;
+            opacity: 0.75;
+            box-shadow: 0 0 20px var(--primary-glow);
+            transform: scaleX(-1);
+            object-fit: cover;
+            background: rgba(0,0,0,0.6);
+        }
+
+        .hud-corner {
+            position: fixed; 
+            width: 30px; 
+            height: 30px;
+            z-index: 5; 
+            pointer-events: none;
+            border: 2px solid var(--primary);
+            opacity: 0.7; 
+            filter: drop-shadow(0px 0px 6px var(--primary-glow));
+        }
+        .top-left { top: 12px; left: 12px; border-right: none; border-bottom: none; }
+        .top-right { top: 12px; right: 12px; border-left: none; border-bottom: none; }
+        .bottom-left { bottom: 12px; left: 12px; border-right: none; border-top: none; }
+        .bottom-right { bottom: 12px; right: 12px; border-left: none; border-top: none; }
+
+        @media (max-width: 650px) {
+            #telemetry-panel { top: 70px; left: 10px; font-size: 8.5px; padding: 10px 12px; }
+            #chrono-panel { top: 70px; right: 10px; padding: 10px 12px; }
+            .chrono-time { font-size: 15px; }
+            .chrono-date { font-size: 8.5px; }
+            #gauge-panel { top: 160px; right: 10px; padding: 10px 8px; gap: 8px; }
+            .gauge-container { width: 85px; }
+            .gauge-svg { width: 85px; height: 75px; }
+            .gauge-val-text { font-size: 12px; }
+            .gauge-title-label { font-size: 8.5px; }
+            #gesture-cam { width: 110px; height: 80px; bottom: 15px; right: 10px; }
+            #header-bar { font-size: 10px; padding: 6px 16px; }
+        }
+    </style>
+</head>
+<body>
+    <!-- AMBIENT HUD GRID & TARGET RETICLE OVERLAY -->
+    <div id="hud-grid-bg"></div>
+    <div id="core-target-hud">
+        <div class="target-ring r1"></div>
+        <div class="target-ring r2"></div>
+        <div class="target-ring r3"></div>
+    </div>
+
+    <!-- REDESIGNED FUTURISTIC SYSTEM INITIALIZATION LOADING OVERLAY -->
+    <div id="credit-overlay">
+        <canvas id="init-hud-canvas"></canvas>
+        <div id="init-hud-content">
+            <div id="init-main-title">SYSTEM INITIALIZING</div>
+            <div id="init-diag-container">
+                <div id="init-diag-status">CORE SYSTEM ........ INITIALIZING</div>
+            </div>
+            <div id="init-progress-bar"><div id="init-progress-fill"></div></div>
+            <div id="init-percent-text">0%</div>
+            <div id="init-author-credit">Made by Ahil Rahaman & Pritam Goswami</div>
+        </div>
+    </div>
+
+    <div id="canvas-container"></div>
+    <video id="gesture-cam" autoplay playsinline></video>
+
+    <div id="header-bar">F.R.I.D.A.Y. CORE COMMAND CENTER</div>
+
+    <div id="telemetry-panel">
+        <div class="tele-header">SYSTEM DIAGNOSTICS</div>
+        <div class="tele-item"><span>CORE:</span><span id="tele-core">FRIDAY_v8.1</span></div>
+        <div class="tele-item"><span>STATUS:</span><span id="tele-status">SYNCHRONIZED</span></div>
+        <div class="tele-item"><span>CPU:</span><span id="tele-cpu">0%</span></div>
+        <div class="tele-item"><span>RAM:</span><span id="tele-ram">0%</span></div>
+        <div class="tele-item"><span>GPU:</span><span id="tele-gpu">N/A</span></div>
+        <div class="tele-item"><span>GESTURES:</span><span id="tele-gesture">ACTIVE</span></div>
+    </div>
+
+    <!-- Time & Date HUD Display -->
+    <div id="chrono-panel">
+        <div class="chrono-label">LOCAL TIME</div>
+        <div class="chrono-time" id="chrono-clock">00:00:00</div>
+        <div class="chrono-date" id="chrono-date">SUN 13 SEP 2026</div>
+    </div>
+
+    <!-- CPU, RAM, GPU Speedometer Gauges -->
+    <div id="gauge-panel">
+        <!-- CPU Gauge -->
+        <div class="gauge-container">
+            <svg class="gauge-svg" viewBox="0 0 120 100">
+                <path class="gauge-bg-arc" d="M 23.6 76.0 A 42 42 0 1 1 96.4 76.0" />
+                <path class="gauge-ticks" d="M 21.0 77.5 L 25.0 75.0 M 18.0 55.0 L 23.0 55.0 M 27.5 33.5 L 31.5 36.5 M 46.0 20.0 L 48.5 24.5 M 60.0 15.0 L 60.0 20.0 M 74.0 20.0 L 71.5 24.5 M 92.5 33.5 L 88.5 36.5 M 102.0 55.0 L 97.0 55.0 M 99.0 77.5 L 95.0 75.0" />
+                <circle cx="60" cy="55" r="28" fill="none" stroke="rgba(0, 240, 255, 0.1)" stroke-dasharray="4 2" />
+                <path class="gauge-fill-arc cpu-arc" id="cpu-gauge-arc" d="M 23.6 76.0 A 42 42 0 1 1 96.4 76.0" />
+                <text class="gauge-val-text" x="60" y="54" id="cpu-gauge-val">0%</text>
+            </svg>
+            <div class="gauge-title-label">CPU</div>
+        </div>
+
+        <!-- RAM / MEMORY Gauge -->
+        <div class="gauge-container">
+            <svg class="gauge-svg" viewBox="0 0 120 100">
+                <path class="gauge-bg-arc" d="M 23.6 76.0 A 42 42 0 1 1 96.4 76.0" />
+                <circle cx="60" cy="55" r="32" fill="none" stroke="rgba(0, 240, 255, 0.12)" stroke-dasharray="2 4" />
+                <path class="gauge-ticks" d="M 21.0 77.5 L 25.0 75.0 M 18.0 55.0 L 23.0 55.0 M 27.5 33.5 L 31.5 36.5 M 46.0 20.0 L 48.5 24.5 M 60.0 15.0 L 60.0 20.0 M 74.0 20.0 L 71.5 24.5 M 92.5 33.5 L 88.5 36.5 M 102.0 55.0 L 97.0 55.0 M 99.0 77.5 L 95.0 75.0" />
+                <path class="gauge-fill-arc ram-arc" id="ram-gauge-arc" d="M 23.6 76.0 A 42 42 0 1 1 96.4 76.0" />
+                <text class="gauge-val-text" x="60" y="54" id="ram-gauge-val">0%</text>
+            </svg>
+            <div class="gauge-title-label">RAM</div>
+        </div>
+
+        <!-- GPU Gauge -->
+        <div class="gauge-container">
+            <svg class="gauge-svg" viewBox="0 0 120 100">
+                <path class="gauge-bg-arc" d="M 23.6 76.0 A 42 42 0 1 1 96.4 76.0" />
+                <path d="M 16 55 L 12 55 M 108 55 L 104 55" stroke="rgba(0, 240, 255, 0.3)" stroke-width="2" />
+                <path class="gauge-ticks" d="M 21.0 77.5 L 25.0 75.0 M 18.0 55.0 L 23.0 55.0 M 27.5 33.5 L 31.5 36.5 M 46.0 20.0 L 48.5 24.5 M 60.0 15.0 L 60.0 20.0 M 74.0 20.0 L 71.5 24.5 M 92.5 33.5 L 88.5 36.5 M 102.0 55.0 L 97.0 55.0 M 99.0 77.5 L 95.0 75.0" />
+                <path class="gauge-fill-arc gpu-arc" id="gpu-gauge-arc" d="M 23.6 76.0 A 42 42 0 1 1 96.4 76.0" />
+                <text class="gauge-val-text" x="60" y="54" id="gpu-gauge-val">N/A</text>
+            </svg>
+            <div class="gauge-title-label">GPU</div>
+        </div>
+    </div>
+
+    <div class="hud-corner top-left"></div>
+    <div class="hud-corner top-right"></div>
+    <div class="hud-corner bottom-left"></div>
+    <div class="hud-corner bottom-right"></div>
+
+    <div id="ui-layer">
+        <div id="status-text">SYSTEM STANDBY</div>
+        
+        <div id="chat-log">
+            <div class="bubble bot">Boss, standing by for directive...</div>
+        </div>
+        
+        <!-- EXISTING SMALL EMPTY TRANSPARENT ROUNDED RECTANGLE - WAVEFORM CONTAINER -->
+        <canvas id="eq-canvas" width="380" height="28"></canvas>
+        
+        <div id="input-container">
+            <span class="input-prompt-symbol">&gt;</span>
+            <input type="text" id="text-input" placeholder="Boss, standing by for directive..." autocomplete="off">
+            <button id="mic-btn" title="Execute Directive">
+                <svg viewBox="0 0 24 24">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // -------------------------------------------------------------
+        // NEW: CINEMATIC HOLOGRAPHIC SYSTEM INITIALIZATION ENGINE
+        // -------------------------------------------------------------
+        (function initSystemInitializationScreen() {
+            const overlay = document.getElementById('credit-overlay');
+            const canvas = document.getElementById('init-hud-canvas');
+            const statusEl = document.getElementById('init-diag-status');
+            const fillEl = document.getElementById('init-progress-fill');
+            const percentEl = document.getElementById('init-percent-text');
+
+            if (!overlay || !canvas) return;
+            const ctx = canvas.getContext('2d');
+
+            function resizeCanvas() {
+                const dpr = window.devicePixelRatio || 1;
+                canvas.width = window.innerWidth * dpr;
+                canvas.height = window.innerHeight * dpr;
+            }
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+
+            // Web Audio Initialization SFX
+            let audioCtx = null;
+            function playInitTone(freq, duration) {
+                try {
+                    if (!audioCtx) {
+                        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                        audioCtx = new AudioCtx();
+                    }
+                    if (audioCtx.state === 'suspended') audioCtx.resume();
+                    const now = audioCtx.currentTime;
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, now);
+                    gain.gain.setValueAtTime(0.04, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+                    osc.connect(gain); gain.connect(audioCtx.destination);
+                    osc.start(now); osc.stop(now + duration);
+                } catch (e) {
+                    // Audio block safety
+                }
+            }
+
+            // Diagnostic Messages Timeline Sequence
+            const diagSteps = [
+                { time: 0,    text: "CORE SYSTEM ........ INITIALIZING", tone: 440 },
+                { time: 700,  text: "AUDIO ENGINE ....... READY", tone: 600 },
+                { time: 1400, text: "VISION SYSTEM ...... READY", tone: 750 },
+                { time: 2100, text: "TELEMETRY .......... READY", tone: 900 },
+                { time: 2800, text: "NEURAL INTERFACE ... SYNCHRONIZING", tone: 1050 },
+                { time: 3500, text: "COMMUNICATION ...... ESTABLISHED", tone: 1200 },
+                { time: 4200, text: "SYSTEM CHECK ....... COMPLETE", tone: 1350 },
+                { time: 4700, text: "SYSTEM ONLINE", tone: 1600 }
+            ];
+
+            // Ambient background particles
+            const particles = [];
+            for (let i = 0; i < 90; i++) {
+                particles.push({
+                    x: (Math.random() - 0.5) * 2,
+                    y: (Math.random() - 0.5) * 2,
+                    size: Math.random() * 1.5 + 0.5,
+                    speed: Math.random() * 0.0015 + 0.0004
+                });
+            }
+
+            const startTime = performance.now();
+            const DURATION = 4900; // 4.9 seconds total initialization timeline
+            let playedSteps = {};
+            let animFrameId = null;
+
+            function renderInit(now) {
+                const elapsed = now - startTime;
+                const progress = Math.min(1.0, elapsed / DURATION);
+
+                // Update Progress UI
+                const pct = Math.floor(progress * 100);
+                if (fillEl) fillEl.style.width = pct + '%';
+                if (percentEl) percentEl.textContent = pct + '%';
+
+                // Update Diagnostic Messages
+                diagSteps.forEach((step, idx) => {
+                    if (elapsed >= step.time && !playedSteps[idx]) {
+                        if (statusEl) statusEl.textContent = step.text;
+                        playInitTone(step.tone, 0.15);
+                        playedSteps[idx] = true;
+                    }
+                });
+
+                // Canvas HUD Visualization
+                const dpr = window.devicePixelRatio || 1;
+                const width = canvas.width;
+                const height = canvas.height;
+                const cx = width / 2;
+                const cy = height / 2;
+
+                ctx.clearRect(0, 0, width, height);
+
+                // Space background
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(0, 0, width, height);
+
+                // Grid lines
+                ctx.strokeStyle = 'rgba(0, 240, 255, 0.035)';
+                ctx.lineWidth = 1;
+                const gridSize = 45 * dpr;
+                for (let x = 0; x < width; x += gridSize) {
+                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+                }
+                for (let y = 0; y < height; y += gridSize) {
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+                }
+
+                // Render background floating dust
+                ctx.fillStyle = 'rgba(0, 240, 255, 0.4)';
+                particles.forEach(p => {
+                    p.y -= p.speed;
+                    if (p.y < -1) p.y = 1;
+                    const px = cx + p.x * width * 0.5;
+                    const py = cy + p.y * height * 0.5;
+                    ctx.beginPath(); ctx.arc(px, py, p.size * dpr, 0, Math.PI * 2); ctx.fill();
+                });
+
+                // Central Concentric HUD Rings & Progress Arc
+                const tSec = elapsed * 0.001;
+                const nodeR = Math.min(width, height) * 0.18;
+
+                ctx.save();
+                ctx.shadowColor = '#00f0ff';
+                ctx.shadowBlur = 12 * Math.sin(progress * Math.PI);
+
+                // Concentric Ring 1 (Clockwise)
+                ctx.beginPath();
+                ctx.arc(cx, cy, nodeR, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(0, 240, 255, 0.2)';
+                ctx.lineWidth = 1.5 * dpr;
+                ctx.stroke();
+
+                // Concentric Ring 2 (Dashed Counter-Clockwise)
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(-tSec * 0.6);
+                ctx.beginPath();
+                ctx.arc(0, 0, nodeR * 1.25, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(0, 240, 255, 0.4)';
+                ctx.lineWidth = 2 * dpr;
+                ctx.setLineDash([14 * dpr, 10 * dpr]);
+                ctx.stroke();
+                ctx.restore();
+
+                // Radial Progress Arc Tracer (0 to 360 deg)
+                ctx.beginPath();
+                ctx.arc(cx, cy, nodeR * 1.25, -Math.PI / 2, -Math.PI / 2 + (progress * Math.PI * 2));
+                ctx.strokeStyle = 'var(--primary)';
+                ctx.lineWidth = 3.5 * dpr;
+                ctx.stroke();
+
+                // Central Core Glow Node
+                const coreGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, nodeR * 0.5);
+                coreGlow.addColorStop(0, `rgba(255, 255, 255, ${0.4 + progress * 0.6})`);
+                coreGlow.addColorStop(0.4, `rgba(0, 240, 255, ${0.3 + progress * 0.5})`);
+                coreGlow.addColorStop(1, 'rgba(0, 240, 255, 0)');
+                ctx.beginPath();
+                ctx.arc(cx, cy, nodeR * 0.5, 0, Math.PI * 2);
+                ctx.fillStyle = coreGlow;
+                ctx.fill();
+
+                ctx.restore();
+
+                // Animation loop / Completion handoff
+                if (elapsed < DURATION) {
+                    animFrameId = requestAnimationFrame(renderInit);
+                } else {
+                    // Smooth dissolve into the main F.R.I.D.A.Y. HUD interface
+                    overlay.style.opacity = '0';
+                    overlay.style.visibility = 'hidden';
+                    overlay.style.pointerEvents = 'none';
+                    if (animFrameId) cancelAnimationFrame(animFrameId);
+                }
+            }
+
+            animFrameId = requestAnimationFrame(renderInit);
+
+            // Failsafe timer (guarantees handoff at 5.2s under all circumstances)
+            setTimeout(() => {
+                if (overlay.style.visibility !== 'hidden') {
+                    overlay.style.opacity = '0';
+                    overlay.style.visibility = 'hidden';
+                    overlay.style.pointerEvents = 'none';
+                    if (animFrameId) cancelAnimationFrame(animFrameId);
+                }
+            }, 5200);
+        })();
+
+        // -------------------------------------------------------------
+        // Real-time Time & Date Chrono Engine
+        // -------------------------------------------------------------
+        function updateChrono() {
+            const now = new Date();
+            
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            const timeStr = `${hours}:${minutes}:${seconds}`;
+            
+            const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+            const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+            
+            const dayName = days[now.getDay()];
+            const dateNum = String(now.getDate()).padStart(2, '0');
+            const monthName = months[now.getMonth()];
+            const yearNum = now.getFullYear();
+            
+            const dateStr = `${dayName} ${dateNum} ${monthName} ${yearNum}`;
+            
+            const clockEl = document.getElementById('chrono-clock');
+            const dateEl = document.getElementById('chrono-date');
+            
+            if (clockEl) clockEl.textContent = timeStr;
+            if (dateEl) dateEl.textContent = dateStr;
+        }
+
+        setInterval(updateChrono, 1000);
+        updateChrono();
+
+        // -------------------------------------------------------------
+        // Futuristic Speedometer Arc Update Engine
+        // -------------------------------------------------------------
+        const ARC_TOTAL_LEN = 175.93;
+
+        function updateGauge(gaugeId, valId, value) {
+            const arcEl = document.getElementById(gaugeId);
+            const valEl = document.getElementById(valId);
+            
+            if (!arcEl || !valEl) return;
+
+            if (value === null || value === undefined || value === 'N/A' || isNaN(value)) {
+                arcEl.style.strokeDashoffset = ARC_TOTAL_LEN;
+                valEl.textContent = 'N/A';
+                arcEl.style.stroke = 'var(--primary)';
+                arcEl.style.filter = 'drop-shadow(0px 0px 4px var(--primary-glow))';
+                return;
+            }
+            
+            const pct = Math.max(0, Math.min(100, Math.round(Number(value))));
+            const offset = ARC_TOTAL_LEN - (pct / 100) * ARC_TOTAL_LEN;
+            arcEl.style.strokeDashoffset = offset;
+            valEl.textContent = pct + '%';
+            
+            if (pct >= 85) {
+                arcEl.style.stroke = '#ff0055';
+                arcEl.style.filter = 'drop-shadow(0px 0px 8px var(--danger-glow))';
+            } else if (pct >= 70) {
+                arcEl.style.stroke = '#ffaa00';
+                arcEl.style.filter = 'drop-shadow(0px 0px 8px var(--warning-glow))';
+            } else {
+                arcEl.style.stroke = 'var(--primary)';
+                arcEl.style.filter = 'drop-shadow(0px 0px 6px var(--primary-glow))';
+            }
+        }
+
+        const FRIDAY_CONFIG = {
+            name: "FRIDAY_v8.1",
+            primary: "#00f0ff",
+            glow: "rgba(0,240,255,0.4)",
+            bg: "#031424",
+            colorVec: new THREE.Vector3(0.0, 0.94, 1.0),
+            placeholder: "Boss, standing by for directive...",
+            displacementType: 1.0,
+            colorHex: 0x00f0ff,
+            ringSpeedMult: 2.5
+        };
+
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x031424, 0.035);
+
+        const sceneGroup = new THREE.Group();
+        scene.add(sceneGroup);
+
+        const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 6.5;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ReinhardToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.enablePan = false;
+
+        const composer = new THREE.EffectComposer(renderer);
+        composer.addPass(new THREE.RenderPass(scene, camera));
+        const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.9, 0.4, 0.08);
+        composer.addPass(bloomPass);
+
+        const dynamicCoreShader = {
+            vertexShader: `
+                varying vec2 vUv;
+                varying vec3 vNormal;
+                varying vec3 vPosition;
+                uniform float uTime;
+                uniform float uPulse;
+
+                void main() {
+                    vUv = uv;
+                    vNormal = normalize(normalMatrix * normal);
+                    vec3 pos = position;
+                    pos += normal * sin(pos.y * 16.0 + uTime * 5.0) * 0.008 * uPulse;
+
+                    vPosition = (modelViewMatrix * vec4(pos, 1.0)).xyz;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                }
+            `,
+            fragmentShader: `
+                varying vec2 vUv;
+                varying vec3 vNormal;
+                varying vec3 vPosition;
+                uniform float uTime;
+                uniform float uPulse;
+
+                void main() {
+                    vec3 viewDir = normalize(-vPosition);
+                    float fresnel = pow(1.0 - abs(dot(viewDir, vNormal)), 2.2);
+                    float grid = clamp(step(0.95, fract(vUv.x * 42.0 - uTime * 0.2)) + step(0.95, fract(vUv.y * 42.0)), 0.0, 1.0);
+                    float wave = pow(sin(vUv.y * 150.0 - uTime * 8.0) * 0.5 + 0.5, 4.0);
+
+                    vec3 finalColor = mix(vec3(0.0, 0.35, 0.9), vec3(0.0, 0.94, 1.0), fresnel + grid * 0.6);
+                    finalColor = mix(finalColor, vec3(0.8, 0.98, 1.0), wave * 0.4);
+                    float alpha = (fresnel * 0.9 + grid * 0.35 + wave * 0.2) * uPulse;
+                    gl_FragColor = vec4(finalColor, alpha);
+                }
+            `
+        };
+
+        const coreMaterial = new THREE.ShaderMaterial({
+            vertexShader: dynamicCoreShader.vertexShader,
+            fragmentShader: dynamicCoreShader.fragmentShader,
+            uniforms: { uTime: { value: 0 }, uPulse: { value: 1.0 } },
+            transparent: true, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false
+        });
+
+        const innerCore = new THREE.Mesh(new THREE.SphereGeometry(1.0, 64, 64), coreMaterial);
+        sceneGroup.add(innerCore);
+
+        const cageMaterial = new THREE.MeshBasicMaterial({ color: FRIDAY_CONFIG.colorHex, wireframe: true, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending });
+        const outerCage = new THREE.Mesh(new THREE.IcosahedronGeometry(1.35, 4), cageMaterial);
+        sceneGroup.add(outerCage);
+
+        const ringGroup = new THREE.Group();
+        sceneGroup.add(ringGroup);
+
+        const ringShader = {
+            vertexShader: ` varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); } `,
+            fragmentShader: `
+                varying vec2 vUv;
+                uniform float uTime; uniform float uSpeed; uniform float uDash; uniform vec3 uColor;
+                void main() {
+                    float angle = atan(vUv.y - 0.5, vUv.x - 0.5);
+                    float arc = sin(angle * uDash + uTime * uSpeed) * 0.5 + 0.5;
+                    arc = pow(arc, 5.0);
+                    gl_FragColor = vec4(uColor, arc * 0.9);
+                }
+            `
+        };
+
+        const rings = [];
+        function addRing(radius, tube, dash, speed, rx, ry, rz) {
+            const ringGeo = new THREE.TorusGeometry(radius, tube, 16, 128);
+            const ringMat = new THREE.ShaderMaterial({
+                vertexShader: ringShader.vertexShader,
+                fragmentShader: ringShader.fragmentShader,
+                uniforms: { uTime: { value: 0 }, uSpeed: { value: speed }, uDash: { value: dash }, uColor: { value: FRIDAY_CONFIG.colorVec } },
+                transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+            });
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            ring.rotation.set(rx, ry, rz);
+            ring.userData = { rx: rx, ry: ry, rz: rz, speed: speed };
+            ringGroup.add(ring);
+            rings.push(ring);
+        }
+
+        addRing(1.55, 0.008, 14.0,  2.2, Math.PI / 2, 0, 0);
+        addRing(1.75, 0.005, 20.0, -1.8, Math.PI / 3, Math.PI / 4, 0);
+        addRing(1.95, 0.004, 28.0,  2.8, Math.PI / 4, 0, Math.PI / 6);
+        addRing(2.15, 0.006, 10.0, -1.2, Math.PI / 1.8, Math.PI / 3, 0);
+        addRing(2.45, 0.003, 40.0,  1.4, 0, Math.PI / 2, 0);
+        addRing(2.75, 0.002, 52.0, -0.9, Math.PI / 2, Math.PI / 8, 0);
+
+        const pCount = 2000;
+        const pGeo = new THREE.BufferGeometry();
+        const pPos = new Float32Array(pCount * 3);
+        for (let i = 0; i < pCount; i++) {
+            const u = Math.random(); const v = Math.random();
+            const theta = u * 2.0 * Math.PI; const phi = Math.acos(2.0 * v - 1.0);
+            const r = 1.2 + Math.random() * 1.5;
+            pPos[i*3] = r * Math.sin(phi) * Math.cos(theta);
+            pPos[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+            pPos[i*3+2] = r * Math.cos(phi);
+        }
+        pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+        const pMat = new THREE.PointsMaterial({ color: FRIDAY_CONFIG.colorHex, size: 0.022, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending });
+        const particles = new THREE.Points(pGeo, pMat);
+        sceneGroup.add(particles);
+
+        const videoElement = document.getElementById('gesture-cam');
+        let prevHandX = null;
+        let prevHandY = null;
+        let targetScale = 1.0;
+        let targetRotationY = 0;
+        let targetRotationX = 0;
+        let targetPanX = 0;
+        let targetPanY = 0;
+
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
+        });
+
+        hands.onResults((results) => {
+            const gestureStatus = document.getElementById('tele-gesture');
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                const dx = landmarks[8].x - landmarks[4].x;
+                const dy = landmarks[8].y - landmarks[4].y;
+                const pinchDist = Math.sqrt(dx*dx + dy*dy);
+                const currentHandX = landmarks[0].x;
+                const currentHandY = landmarks[0].y;
+                
+                if (prevHandX !== null) {
+                    const deltaX = currentHandX - prevHandX;
+                    const deltaY = currentHandY - prevHandY;
+                    
+                    if (pinchDist < 0.05) {
+                        targetPanX -= deltaX * 12.0; 
+                        targetPanY -= deltaY * 12.0;
+                        gestureStatus.textContent = "TRACKING: PAN";
+                    } else {
+                        targetRotationY -= deltaX * 4.0; 
+                        targetRotationX += deltaY * 4.0;
+                        targetScale = 0.5 + (pinchDist * 6);
+                        targetScale = Math.max(0.4, Math.min(targetScale, 2.5));
+                        gestureStatus.textContent = "TRACKING: ROT/ZOOM";
+                    }
+                }
+                prevHandX = currentHandX;
+                prevHandY = currentHandY;
+                gestureStatus.style.color = "#00ff00";
+            } else {
+                prevHandX = null;
+                prevHandY = null;
+                targetScale = 1.0;
+                targetPanX = 0;
+                targetPanY = 0;
+                gestureStatus.textContent = "ACTIVE (NO HAND)";
+                gestureStatus.style.color = "var(--primary)";
+            }
+        });
+
+        const camera_mp = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 320,
+            height: 240
+        });
+        camera_mp.start();
+
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            const t = clock.getElapsedTime();
+
+            coreMaterial.uniforms.uTime.value = t;
+            innerCore.rotation.y = t * 0.15;
+            outerCage.rotation.x = t * 0.12;
+            outerCage.rotation.y = t * 0.18;
+            particles.rotation.y = t * 0.06;
+
+            const speedMult = FRIDAY_CONFIG.ringSpeedMult;
+            rings.forEach((ring) => {
+                ring.material.uniforms.uTime.value = t * speedMult;
+                ring.rotation.z += ring.userData.speed * 0.005 * speedMult;
+                ring.rotation.x += ring.userData.speed * 0.0025 * speedMult;
+            });
+
+            sceneGroup.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.1);
+            sceneGroup.rotation.y += (targetRotationY - sceneGroup.rotation.y) * 0.1;
+            sceneGroup.rotation.x += (targetRotationX - sceneGroup.rotation.x) * 0.1;
+            sceneGroup.position.x += (targetPanX - sceneGroup.position.x) * 0.1;
+            sceneGroup.position.y += (targetPanY - sceneGroup.position.y) * 0.1;
+
+            controls.update();
+            composer.render();
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // -------------------------------------------------------------
+        // FUTURISTIC CYAN AUDIO WAVEFORM ENGINE (INSIDE #eq-canvas)
+        // -------------------------------------------------------------
+        const WaveformSystem = (function() {
+            const canvas = document.getElementById('eq-canvas');
+            if (!canvas) return null;
+            const ctx = canvas.getContext('2d');
+
+            let state = 'IDLE'; // 'IDLE', 'SPEAKING', 'LISTENING'
+            let audioCtx = null;
+            let analyser = null;
+            let dataArray = null;
+            let micStream = null;
+            let isMicActive = false;
+
+            // Retain crisp pixel density
+            function resizeCanvas() {
+                const rect = canvas.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+                canvas.width = rect.width * dpr;
+                canvas.height = rect.height * dpr;
+            }
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+
+            // Web Audio Analyser Integration
+            async function toggleMicrophone() {
+                const micBtn = document.getElementById('mic-btn');
+                if (isMicActive) {
+                    if (micStream) {
+                        micStream.getTracks().forEach(track => track.stop());
+                        micStream = null;
+                    }
+                    isMicActive = false;
+                    micBtn.classList.remove('active');
+                    setState('IDLE');
+                    return false;
+                }
+
+                try {
+                    if (!audioCtx) {
+                        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                        audioCtx = new AudioContextClass();
+                    }
+                    if (audioCtx.state === 'suspended') {
+                        await audioCtx.resume();
+                    }
+
+                    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    const source = audioCtx.createMediaStreamSource(micStream);
+                    analyser = audioCtx.createAnalyser();
+                    analyser.fftSize = 128;
+                    analyser.smoothingTimeConstant = 0.8;
+                    source.connect(analyser);
+
+                    dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    isMicActive = true;
+                    micBtn.classList.add('active');
+                    setState('LISTENING');
+                    return true;
+                } catch (err) {
+                    console.warn("Microphone access unavailable or denied:", err);
+                    isMicActive = false;
+                    micBtn.classList.remove('active');
+                    return false;
+                }
+            }
+
+            function setState(newState) {
+                state = newState;
+            }
+
+            // Render loop for waveform inside existing middle transparent box
+            let animFrameId = null;
+            let phase = 0;
+
+            function render() {
+                animFrameId = requestAnimationFrame(render);
+                phase += 0.04;
+
+                const width = canvas.width;
+                const height = canvas.height;
+                const centerY = height / 2;
+
+                ctx.clearRect(0, 0, width, height);
+
+                // Determine amplitude and bar counts
+                const barCount = 42;
+                const activeWidth = width * 0.85; // horizontally centered, 85% width
+                const startX = (width - activeWidth) / 2;
+                const step = activeWidth / (barCount - 1);
+
+                // Fetch real audio data if available
+                let realFreqData = null;
+                if (analyser && dataArray && state === 'LISTENING') {
+                    analyser.getByteFrequencyData(dataArray);
+                    realFreqData = dataArray;
+                }
+
+                // Baseline cyan line with faint glow
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(startX - 10, centerY);
+                ctx.lineTo(startX + activeWidth + 10, centerY);
+                ctx.strokeStyle = 'rgba(0, 240, 255, 0.25)';
+                ctx.lineWidth = 1 * (window.devicePixelRatio || 1);
+                ctx.shadowColor = '#00f0ff';
+                ctx.shadowBlur = (state === 'SPEAKING' || state === 'LISTENING') ? 8 : 4;
+                ctx.stroke();
+                ctx.restore();
+
+                // Faint HUD end ticks
+                ctx.fillStyle = 'rgba(0, 240, 255, 0.6)';
+                const tickH = 6 * (window.devicePixelRatio || 1);
+                ctx.fillRect(startX - 10, centerY - tickH / 2, 2, tickH);
+                ctx.fillRect(startX + activeWidth + 10, centerY - tickH / 2, 2, tickH);
+
+                // Draw futuristic symmetric bars
+                for (let i = 0; i < barCount; i++) {
+                    const x = startX + i * step;
+                    
+                    // Envelope shape (parabolic attenuation towards edges)
+                    const normPos = (i / (barCount - 1)) * 2 - 1; // -1 to 1
+                    const envelope = Math.cos(normPos * (Math.PI / 2.2)); // smooth drop at ends
+
+                    let barHeight = 0;
+
+                    if (realFreqData && realFreqData.length > 0) {
+                        // Map bar index to frequency array index
+                        const freqIdx = Math.floor((i / barCount) * (realFreqData.length * 0.7));
+                        const val = realFreqData[freqIdx] / 255.0; // 0..1
+                        barHeight = val * (height * 0.75) * envelope;
+                    } else {
+                        // Procedural simulation mode
+                        let freqMult = 1.0;
+                        let ampMult = 0.15; // IDLE low amplitude
+
+                        if (state === 'SPEAKING') {
+                            freqMult = 2.5;
+                            ampMult = 0.65;
+                        } else if (state === 'LISTENING') {
+                            freqMult = 1.8;
+                            ampMult = 0.5;
+                        }
+
+                        const n1 = Math.sin(i * 0.35 + phase * freqMult);
+                        const n2 = Math.cos(i * 0.7 - phase * (freqMult * 0.8));
+                        const n3 = Math.sin(i * 1.2 + phase * 1.5);
+                        
+                        const waveVal = Math.abs(n1 * 0.5 + n2 * 0.3 + n3 * 0.2);
+                        barHeight = waveVal * (height * 0.7) * ampMult * envelope + (height * 0.08);
+                    }
+
+                    // Enforce minimum subtle baseline height
+                    barHeight = Math.max(barHeight, 2 * (window.devicePixelRatio || 1));
+
+                    // Glow intensity based on mode
+                    const glowBlur = (state === 'SPEAKING') ? 10 : ((state === 'LISTENING') ? 8 : 4);
+                    const opacity = (state === 'IDLE') ? 0.65 : 0.95;
+
+                    ctx.save();
+                    ctx.shadowColor = '#00f0ff';
+                    ctx.shadowBlur = glowBlur;
+
+                    // Neon Cyan Gradient for bars
+                    const gradient = ctx.createLinearGradient(x, centerY - barHeight / 2, x, centerY + barHeight / 2);
+                    gradient.addColorStop(0, `rgba(0, 240, 255, ${opacity * 0.7})`);
+                    gradient.addColorStop(0.5, `rgba(180, 250, 255, ${opacity})`);
+                    gradient.addColorStop(1, `rgba(0, 240, 255, ${opacity * 0.7})`);
+
+                    ctx.fillStyle = gradient;
+                    const barW = Math.max(1.8, step * 0.45);
+                    const halfH = barHeight / 2;
+
+                    // Mirrored vertical bar top & bottom
+                    ctx.beginPath();
+                    if (ctx.roundRect) {
+                        ctx.roundRect(x - barW / 2, centerY - halfH, barW, barHeight, 2);
+                    } else {
+                        ctx.rect(x - barW / 2, centerY - halfH, barW, barHeight);
+                    }
+                    ctx.fill();
+                    ctx.restore();
+                }
+            }
+
+            render();
+
+            return {
+                setState,
+                toggleMicrophone,
+                getState: () => state
+            };
+        })();
+
+        function appendMessage(sender, text) {
+            const chatLog = document.getElementById('chat-log');
+            const bubble = document.createElement('div');
+            bubble.className = `bubble ${sender}`;
+            bubble.textContent = text;
+            chatLog.appendChild(bubble);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        async function processInput() {
+            const input = document.getElementById('text-input');
+            const msg = input.value.trim();
+            if (!msg) return;
+            
+            input.value = '';
+            appendMessage('user', msg);
+            document.getElementById('status-text').textContent = "CORE PROCESSING...";
+
+            // Trigger SPEAKING state on Waveform when processing response
+            if (WaveformSystem) WaveformSystem.setState('SPEAKING');
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: msg })
+                });
+                const data = await res.json();
+                appendMessage('bot', data.response || data.message || "The core returned no response.");
+            } catch (e) {
+                console.error(e);
+                appendMessage('bot', "Connection error with core system.");
+            } finally {
+                document.getElementById('status-text').textContent = "SYSTEM STANDBY";
+                // Return waveform state to IDLE (or LISTENING if mic is active)
+                if (WaveformSystem && WaveformSystem.getState() !== 'LISTENING') {
+                    WaveformSystem.setState('IDLE');
+                }
+            }
+        }
+        
+        document.getElementById('text-input').addEventListener('keydown', (e) => { 
+            if (e.key === 'Enter') processInput(); 
+        });
+        
+        document.getElementById('mic-btn').addEventListener('click', async () => {
+            if (WaveformSystem) {
+                const toggled = await WaveformSystem.toggleMicrophone();
+                if (!toggled && WaveformSystem.getState() !== 'SPEAKING') {
+                    processInput();
+                }
+            } else {
+                processInput();
+            }
+        });
+        
+        // -------------------------------------------------------------
+        // Telemetry & Speedometer Update Loop
+        // -------------------------------------------------------------
+        setInterval(async () => {
+            let cpuVal = null, ramVal = null, gpuVal = null;
+            try {
+                const res = await fetch('/api/stats');
+                if (res.ok) {
+                    const data = await res.json();
+                    cpuVal = data.cpu !== undefined ? data.cpu : null;
+                    ramVal = data.ram !== undefined ? data.ram : null;
+                    gpuVal = data.gpu !== undefined ? data.gpu : null;
+                }
+            } catch (e) {
+                cpuVal = Math.floor(25 + Math.random() * 20);
+                ramVal = Math.floor(45 + Math.random() * 10);
+                gpuVal = 'N/A';
+            }
+
+            document.getElementById('tele-cpu').textContent = (cpuVal !== null && cpuVal !== 'N/A') ? Math.round(cpuVal) + '%' : 'N/A';
+            document.getElementById('tele-ram').textContent = (ramVal !== null && ramVal !== 'N/A') ? Math.round(ramVal) + '%' : 'N/A';
+            document.getElementById('tele-gpu').textContent = (gpuVal !== null && gpuVal !== 'N/A') ? Math.round(gpuVal) + '%' : 'N/A';
+
+            updateGauge('cpu-gauge-arc', 'cpu-gauge-val', cpuVal);
+            updateGauge('ram-gauge-arc', 'ram-gauge-val', ramVal);
+            updateGauge('gpu-gauge-arc', 'gpu-gauge-val', gpuVal);
+        }, 1500);
+    </script>
+</body>
+</html>
