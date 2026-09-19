@@ -30,3 +30,4 @@ While the app is running, it captures a new local screen frame every two seconds
 ## Obsidian Memory
 
 Open `D:\Obsedian\F.R.I.D.A.Y. Vault` as a vault in Obsidian. F.R.I.D.A.Y. updates its profile, operating lessons, and activity log there in the background. Add your own Markdown notes to that vault; notes whose filename or contents match the current request are included as context automatically.
+also this is a collaborative project with Pritam-goswami210 we forgot how to add contributers so you can also download the zip from his repo
